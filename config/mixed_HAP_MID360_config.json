@@ -11,16 +11,12 @@
       "log_data_port": 59000
     },
     "host_net_info" : {
-      "cmd_data_ip" : "192.168.1.5",
+      "host_ip" : "192.168.1.10",
       "cmd_data_port": 56000,
-      "push_msg_ip": "",
-      "push_msg_port": 0,
-      "point_data_ip": "192.168.1.5",
       "point_data_port": 57000,
-      "imu_data_ip" : "192.168.1.5",
       "imu_data_port": 58000,
-      "log_data_ip" : "",
-      "log_data_port": 59000
+      "log_data_port": 59000,
+      "push_msg_port": 0
     }
   },
   "MID360": {
@@ -32,16 +28,29 @@
       "log_data_port": 56500
     },
     "host_net_info" : {
-      "cmd_data_ip" : "192.168.1.5",
+      "host_ip" : "192.168.1.10",
       "cmd_data_port": 56101,
-      "push_msg_ip": "192.168.1.5",
       "push_msg_port": 56201,
-      "point_data_ip": "192.168.1.5",
       "point_data_port": 56301,
-      "imu_data_ip" : "192.168.1.5",
       "imu_data_port": 56401,
-      "log_data_ip" : "",
       "log_data_port": 56501
+    }
+  },
+  "MID360": {
+    "lidar_net_info" : {
+      "cmd_data_port": 56100,
+      "push_msg_port": 56200,
+      "point_data_port": 56300,
+      "imu_data_port": 56400,
+      "log_data_port": 56500
+    },
+    "host_net_info" : {
+      "host_ip" : "192.168.1.10",
+      "cmd_data_port": 56102,
+      "push_msg_port": 56202,
+      "point_data_port": 56302,
+      "imu_data_port": 56402,
+      "log_data_port": 56502
     }
   },
   "lidar_configs" : [
@@ -49,6 +58,8 @@
       "ip" : "192.168.1.100",
       "pcl_data_type" : 1,
       "pattern_mode" : 0,
+      "frame_id": "hap_frame",
+      "name": "hap",
       "extrinsic_parameter" : {
         "roll": 0.0,
         "pitch": 0.0,
@@ -59,9 +70,26 @@
       }
     },
     {
-      "ip" : "192.168.1.12",
+      "ip" : "192.168.1.101",
       "pcl_data_type" : 1,
       "pattern_mode" : 0,
+      "frame_id": "mid360_1_frame",
+      "name": "mid360_1",
+      "extrinsic_parameter" : {
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": 0.0,
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "ip" : "192.168.1.102",
+      "pcl_data_type" : 1,
+      "pattern_mode" : 0,
+      "frame_id": "mid360_2_frame",
+      "name": "mid360_2",
       "extrinsic_parameter" : {
         "roll": 0.0,
         "pitch": 0.0,
