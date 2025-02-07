@@ -36,6 +36,7 @@
 
 #include "driver_node.h"
 #include "lds_lidar.h"
+#include <string>
 
 namespace livox_ros {
 

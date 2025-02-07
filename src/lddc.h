@@ -29,6 +29,7 @@
 
 #include "driver_node.h"
 #include "lds.h"
+#include <string>
 
 namespace livox_ros {
 

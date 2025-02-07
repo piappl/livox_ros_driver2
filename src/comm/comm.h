@@ -267,6 +267,7 @@ typedef struct {
   std::string frame_id;
   std::string name;
   ExtParameter extrinsic_param;
+  std::string ld_name;
   volatile uint32_t set_bits;
   volatile uint32_t get_bits;
 } UserLivoxLidarConfig;
