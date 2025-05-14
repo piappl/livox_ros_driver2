@@ -1,8 +1,6 @@
 //
 // The MIT License (MIT)
 //
-// Copyright (c) 2022 Livox. All rights reserved.
-//
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
@@ -22,21 +20,37 @@
 // SOFTWARE.
 //
 
-#ifndef LIVOX_ROS_DRIVER_LIDAR_COMMON_CALLBACK_H_
-#define LIVOX_ROS_DRIVER_LIDAR_COMMON_CALLBACK_H_
-
-#include "comm/comm.h"
+#include "lidar_info_data_queue.h"
 
 namespace livox_ros {
 
-class LidarCommonCallback {
- public:
-  static void OnLidarPointClounCb(PointFrame* frame, void* client_data);
-  static void LidarImuDataCallback(ImuData* imu_data, void* client_data);
-  static void LidarInfoCallback(LidarInfoData* lidar_info_data, void* client_data);
-  static void LidarDiagnCallback(LidarDiagnData* lidar_info_data, void* client_data);
-};
+void LidarInfoDataQueue::Push(const LidarInfoData* lidar_info_data) {
+  LidarInfoData data(*lidar_info_data);
+  std::lock_guard<std::mutex> lock(mutex_);
+  lidar_info_data_queue_.push_back(std::move(data));
+}
+
+bool LidarInfoDataQueue::Pop(LidarInfoData& lidar_info_data) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (lidar_info_data_queue_.empty()) {
+    return false;
+  }
+  lidar_info_data = lidar_info_data_queue_.front();
+  lidar_info_data_queue_.pop_front();
+  return true;
+}
+
+bool LidarInfoDataQueue::Empty() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return lidar_info_data_queue_.empty();
+}
+
+void LidarInfoDataQueue::Clear() {
+  std::list<LidarInfoData> tmp_lidar_info_data_queue;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    lidar_info_data_queue_.swap(tmp_lidar_info_data_queue);
+  }
+}
 
 } // namespace livox_ros
-
-#endif // LIVOX_ROS_DRIVER_LIDAR_COMMON_CALLBACK_H_

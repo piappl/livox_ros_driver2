@@ -28,6 +28,7 @@
 #include <chrono>
 #include <iostream>
 #include <limits>
+#include <livox_lidar_def.h>
 
 namespace livox_ros {
 
@@ -75,6 +76,18 @@ void PubHandler::SetPointCloudConfig(const double publish_freq) {
 void PubHandler::SetImuDataCallback(ImuDataCallback cb, void* client_data) {
   imu_client_data_ = client_data;
   imu_callback_ = cb;
+}
+
+void PubHandler::SetLidarInfoCallback(LidarInfoCallback cb, void* client_data) {
+  lidar_info_client_data_ = client_data;
+  lidar_info_callback_ = cb;
+  LivoxLidarAddCmdObserver(OnLivoxLidarCmdObserverCallback, this);
+}
+
+void PubHandler::SetLidarDiagnCallback(LidarDiagnCallback cb, void* client_data) {
+  lidar_diagn_client_data_ = client_data;
+  lidar_diagn_callback_ = cb;
+  // LivoxLidarAddCmdObserver(OnLivoxLidarCmdObserverCallback, this);
 }
 
 void PubHandler::AddLidarsExtParam(LidarExtParameter& lidar_param) {
@@ -129,7 +142,7 @@ void PubHandler::OnLivoxLidarPointCloudCallback(uint32_t handle, const uint8_t d
   RawPacket packet = {};
   packet.handle = handle;
   packet.lidar_type = LidarProtoType::kLivoxLidarType;
-  packet.extrinsic_enable = false; 
+  packet.extrinsic_enable = false;
   if (dev_type == LivoxLidarDeviceType::kLivoxLidarTypeIndustrialHAP) {
     packet.line_num = kLineNumberHAP;
   } else if (dev_type == LivoxLidarDeviceType::kLivoxLidarTypeMid360) {
@@ -150,6 +163,127 @@ void PubHandler::OnLivoxLidarPointCloudCallback(uint32_t handle, const uint8_t d
   }
     self->packet_condition_.notify_one();
 
+  return;
+}
+
+void PubHandler::OnLivoxLidarCmdObserverCallback(const uint32_t handle,
+                                                      const LivoxLidarCmdPacket* data,
+                                                      void* client_data) {
+  PubHandler* self = (PubHandler*)client_data;
+  if (!self) {
+    return;
+  }
+  if(self->is_quit_.load()) {
+    return;
+  }
+
+  uint16_t cmd_id = data->cmd_id;
+  uint8_t cmd_type = data->cmd_type;
+
+  switch(cmd_id) {
+    case kCommandIDLidarSearch:
+      {
+        if(cmd_type == kCommandTypeAck) { // maybe we don't need this check
+          QueryLivoxLidarInternalInfo(handle, QueryInternalInfoCallback, self);
+        }
+      }
+      break;
+    default:
+      break;
+  }
+  return;
+}
+
+void PubHandler::QueryInternalInfoCallback(livox_status status, uint32_t handle,
+                                                LivoxLidarDiagInternalInfoResponse* response,
+                                                void* client_data) {
+  if (status != kLivoxLidarStatusSuccess) {
+    return;
+  }
+  if (response == nullptr) {
+    return;
+  }
+  PubHandler* self = (PubHandler*)client_data;
+  if (!self) {
+    return;
+  }
+  if (self->is_quit_.load()) {
+    return;
+  }
+
+  DirectLidarStateInfo direct_lidar_state_info;
+  // LiDAR diag status code, setting initial value to unknown/undefined
+  memset(&direct_lidar_state_info.lidar_diag_status, 0xFF, sizeof(direct_lidar_state_info.lidar_diag_status));
+  // HMS (health management system), setting initial value to unknown/undefined
+  memset(&direct_lidar_state_info.hms_code, 0xFF, sizeof(direct_lidar_state_info.hms_code));
+
+  uint16_t off = 0;
+  for (uint8_t i = 0; i < response->param_num; ++i) {
+    LivoxLidarKeyValueParam* kv = (LivoxLidarKeyValueParam*)&response->data[off];
+
+    if(kv->key == kKeyLidarDiagStatus) {
+      memcpy(&direct_lidar_state_info.lidar_diag_status, &(kv->value[0]), sizeof(direct_lidar_state_info.lidar_diag_status));
+/*
+      printf("handle: 0x%x, param_num: [%d], kvKey (kv->key): 0x%x, kKeyLidarDiagStatus(), len: %d, code: 0x%hx\n",
+        handle, (uint32_t)i, (unsigned int)(kv->key), kv->length, direct_lidar_state_info.lidar_diag_status);
+      fflush(stdout);
+*/
+    }
+    if(kv->key == kKeyHmsCode) {
+      memcpy(direct_lidar_state_info.hms_code, &(kv->value[0]), sizeof(direct_lidar_state_info.hms_code));
+/*
+      printf("handle: 0x%x, param_num: [%d], kvKey (kv->key): 0x%x, kKeyHmsCode(), len: %d, code: 0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x\n",
+        handle, (uint32_t)i, (unsigned int)(kv->key), kv->length,
+        direct_lidar_state_info.hms_code[0], direct_lidar_state_info.hms_code[1],
+        direct_lidar_state_info.hms_code[2], direct_lidar_state_info.hms_code[3],
+        direct_lidar_state_info.hms_code[4], direct_lidar_state_info.hms_code[5],
+        direct_lidar_state_info.hms_code[6], direct_lidar_state_info.hms_code[7]
+      );
+      fflush(stdout);
+*/
+    }
+
+    off += sizeof(uint16_t) * 2;
+    off += kv->length;
+  }
+
+#if 0 // TODO ! send lidar info data, IMPORTANT !!! not used, because we do not store data when it is not received (queue overflow problem)
+  {
+    LidarInfoData lidar_info_data;
+    lidar_info_data.lidar_type = kLivoxLidarType;
+    lidar_info_data.handle = handle;
+
+    lidar_info_data.time_stamp = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    self->lidar_info_callback_(&lidar_info_data, self->lidar_info_client_data_);
+  }
+#endif
+  {
+    LidarDiagnData lidar_diagn_data;
+    HmsDiagnCodeInfo hms_diagn_code_info;
+
+    lidar_diagn_data.lidar_type = kLivoxLidarType;
+    lidar_diagn_data.handle = handle;
+    lidar_diagn_data.time_stamp =
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+    for (uint16_t i = 0; i<(sizeof(direct_lidar_state_info.hms_code)/sizeof(uint32_t)); i++) {
+      if (((direct_lidar_state_info.hms_code[i] & 0xFF) != HmsDiagnAbnormalLevelOk) &&
+          ((direct_lidar_state_info.hms_code[i] & 0xFF) != HmsDiagnAbnormalLevelUnkown))
+      {
+        CreateDiagnCodeInfo(direct_lidar_state_info.hms_code[i], hms_diagn_code_info);
+        lidar_diagn_data.hms_diagn.push_back(hms_diagn_code_info);
+      }
+    }
+/*
+    if (lidar_diagn_data.hms_diagn.empty()) {
+      CreateDiagnCodeInfo(direct_lidar_state_info.hms_code[0], hms_diagn_code_info);
+      lidar_diagn_data.hms_diagn.push_back(hms_diagn_code_info);
+    }
+*/
+    CreateDiagnStatusCode(direct_lidar_state_info.lidar_diag_status, lidar_diagn_data.status_code);
+    CreateDiagnStatusCodeGlobal(lidar_diagn_data.hms_diagn, lidar_diagn_data.status_code);
+    self->lidar_diagn_callback_(&lidar_diagn_data, self->lidar_diagn_client_data_);
+  }
   return;
 }
 
@@ -187,7 +321,7 @@ void PubHandler::CheckTimer(uint32_t id) {
     lidar_point.points_num = points_[id].size();
     lidar_point.points = points_[id].data();
     frame_.lidar_num++;
-    
+
     if (frame_.lidar_num != 0) {
       PublishPointCloud();
       frame_.lidar_num = 0;
@@ -252,6 +386,7 @@ void PubHandler::RawDataProcess() {
     process_handler->PointCloudProcess(raw_data);
     CheckTimer(id);
   }
+  std::cout << "finish 'RawDataProcess()'" << std::endl;
 }
 
 bool PubHandler::GetLidarId(LidarProtoType lidar_type, uint32_t handle, uint32_t& id) {
@@ -310,7 +445,7 @@ void LidarPubHandler::PointCloudProcess(RawPacket & pkt) {
     static bool flag = false;
     if (!flag) {
       std::cout << "error, unsupported protocol type: " << static_cast<int>(pkt.lidar_type) << std::endl;
-      flag = true;      
+      flag = true;
     }
   }
 }

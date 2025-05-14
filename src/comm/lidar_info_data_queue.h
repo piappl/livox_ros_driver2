@@ -1,8 +1,6 @@
 //
 // The MIT License (MIT)
 //
-// Copyright (c) 2022 Livox. All rights reserved.
-//
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
@@ -22,21 +20,40 @@
 // SOFTWARE.
 //
 
-#ifndef LIVOX_ROS_DRIVER_LIDAR_COMMON_CALLBACK_H_
-#define LIVOX_ROS_DRIVER_LIDAR_COMMON_CALLBACK_H_
+#ifndef LIVOX_ROS_DRIVER_LIDAR_INFO_DATA_QUEUE_H_
+#define LIVOX_ROS_DRIVER_LIDAR_INFO_DATA_QUEUE_H_
 
-#include "comm/comm.h"
+#include <list>
+#include <mutex>
+#include <cstdint>
 
 namespace livox_ros {
 
-class LidarCommonCallback {
+// Based on the IMU Data Type in Livox communication protocol
+// TODO: add a link to the protocol
+
+typedef struct LidarInfoData {
+  uint8_t lidar_type;
+  uint32_t handle;
+  uint64_t time_stamp;
+  LidarInfoData(): lidar_type(0), handle(0), time_stamp(0) {}
+
+} LidarInfoData;
+
+class LidarInfoDataQueue {
  public:
-  static void OnLidarPointClounCb(PointFrame* frame, void* client_data);
-  static void LidarImuDataCallback(ImuData* imu_data, void* client_data);
-  static void LidarInfoCallback(LidarInfoData* lidar_info_data, void* client_data);
-  static void LidarDiagnCallback(LidarDiagnData* lidar_info_data, void* client_data);
+  void Push(const LidarInfoData* imu_data);
+  bool Pop(LidarInfoData& imu_data);
+  bool Empty();
+  void Clear();
+
+ private:
+  std::mutex mutex_;
+  std::list<LidarInfoData> lidar_info_data_queue_;
 };
 
-} // namespace livox_ros
+} // namespace
 
-#endif // LIVOX_ROS_DRIVER_LIDAR_COMMON_CALLBACK_H_
+#endif // #define LIVOX_ROS_DRIVER_LIDAR_INFO_DATA_QUEUE_H_
+
+

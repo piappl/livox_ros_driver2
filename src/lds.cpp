@@ -41,6 +41,7 @@ Lds::Lds(const double publish_freq, const uint8_t data_src)
     : lidar_count_(kMaxSourceLidar),
       pcd_semaphore_(0),
       imu_semaphore_(0),
+      lidar_info_semaphore_(0),
       publish_freq_(publish_freq),
       data_src_(data_src),
       request_exit_(false) {
@@ -165,6 +166,53 @@ void Lds::StoragePointData(PointFrame* frame) {
     }
     PushLidarData(&lidar_point, index, base_time);
   }
+}
+
+void Lds::StorageLidarInfoData(LidarInfoData* lidar_info_data) {
+  uint32_t device_num = 0;
+  if (lidar_info_data->lidar_type == kLivoxLidarType) {
+    device_num = lidar_info_data->handle;
+  } else {
+    printf("Storage lidar info data failed, unknown lidar type:%u.\n", lidar_info_data->lidar_type);
+    return;
+  }
+
+  uint8_t index = 0;
+  int ret = cache_index_.GetIndex(lidar_info_data->lidar_type, device_num, index);
+  if (ret != 0) {
+    printf("Storage lidar info point data failed, can not get index, lidar type:%u, device_num:%u.\n", lidar_info_data->lidar_type, device_num);
+    return;
+  }
+
+  LidarDevice *p_lidar = &lidars_[index];
+  LidarInfoDataQueue* lidar_info_queue = &p_lidar->lidar_info_data;
+  lidar_info_queue->Push(lidar_info_data);
+  if (!lidar_info_queue->Empty()) {
+    if (lidar_info_semaphore_.GetCount() <= 0) {
+      lidar_info_semaphore_.Signal();
+    }
+  }
+}
+
+void Lds::StorageLidarDiagnData(LidarDiagnData* lidar_diagn_data) {
+  uint32_t device_num = 0;
+  if (lidar_diagn_data->lidar_type == kLivoxLidarType) {
+    device_num = lidar_diagn_data->handle;
+  } else {
+    printf("Storage lidar diagn data (diagnostic) failed, unknown lidar type:%u.\n", lidar_diagn_data->lidar_type);
+    return;
+  }
+
+  uint8_t index = 0;
+  int ret = cache_index_.GetIndex(lidar_diagn_data->lidar_type, device_num, index);
+  if (ret != 0) {
+    printf("Storage lidar diagn point data (diagnostic) failed, can not get index, lidar type:%u, device_num:%u.\n", lidar_diagn_data->lidar_type, device_num);
+    return;
+  }
+
+  LidarDevice *p_lidar = &lidars_[index];
+  LidarDiagnDataShare* lidar_diagn_share = &p_lidar->lidar_diagn_data;
+  lidar_diagn_share->Push(lidar_diagn_data);
 }
 
 void Lds::PushLidarData(PointPacket* lidar_data, const uint8_t index, const uint64_t base_time) {

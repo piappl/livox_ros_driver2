@@ -71,12 +71,15 @@ class LidarPubHandler {
   std::mutex mutex_;
   std::atomic_bool is_set_extrinsic_params_;
 };
-  
+
 class PubHandler {
  public:
   using PointCloudsCallback = std::function<void(PointFrame*, void *)>;
   using ImuDataCallback = std::function<void(ImuData*, void*)>;
+  using LidarInfoCallback = std::function<void(LidarInfoData*, void*)>;
+  using LidarDiagnCallback = std::function<void(LidarDiagnData*, void*)>;
   using TimePoint = std::chrono::high_resolution_clock::time_point;
+
 
   PubHandler() {}
 
@@ -90,6 +93,8 @@ class PubHandler {
   void AddLidarsExtParam(LidarExtParameter& extrinsic_params);
   void ClearAllLidarsExtrinsicParams();
   void SetImuDataCallback(ImuDataCallback cb, void* client_data);
+  void SetLidarInfoCallback(LidarInfoCallback cb, void* client_data);
+  void SetLidarDiagnCallback(LidarDiagnCallback cb, void* client_data);
 
  private:
   //thread to process raw data
@@ -104,7 +109,13 @@ class PubHandler {
   void PublishPointCloud();
   static void OnLivoxLidarPointCloudCallback(uint32_t handle, const uint8_t dev_type,
                                              LivoxLidarEthernetPacket *data, void *client_data);
-  
+
+  static void OnLivoxLidarCmdObserverCallback(const uint32_t handle, const LivoxLidarCmdPacket* data,
+                                              void* client_data);
+  static void QueryInternalInfoCallback(livox_status status, uint32_t handle,
+                                        LivoxLidarDiagInternalInfoResponse* response,
+                                        void* client_data);
+
   static bool GetLidarId(LidarProtoType lidar_type, uint32_t handle, uint32_t& id);
   static uint64_t GetEthPacketTimestamp(uint8_t timestamp_type, uint8_t* time_stamp, uint8_t size);
 
@@ -113,6 +124,12 @@ class PubHandler {
 
   ImuDataCallback imu_callback_;
   void* imu_client_data_ = nullptr;
+
+  LidarInfoCallback lidar_info_callback_;
+  void* lidar_info_client_data_ = nullptr;
+
+  LidarDiagnCallback lidar_diagn_callback_;
+  void* lidar_diagn_client_data_ = nullptr;
 
   PointFrame frame_;
 

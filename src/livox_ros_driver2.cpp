@@ -127,6 +127,8 @@ DriverNode::DriverNode(const rclcpp::NodeOptions & node_options)
   double publish_freq = 10.0; /* Hz */
   int output_type = kOutputToRos;
   std::string frame_id;
+  int diagnostic_freq = 1; /* Hz */
+  double diagnostic_timeout = 10.0; /* seconds */
 
   this->declare_parameter("xfer_format", xfer_format);
   this->declare_parameter("multi_topic", 0);
@@ -137,6 +139,8 @@ DriverNode::DriverNode(const rclcpp::NodeOptions & node_options)
   this->declare_parameter("user_config_path", "path_default");
   this->declare_parameter("cmdline_input_bd_code", "000000000000001");
   this->declare_parameter("lvx_file_path", "/home/livox/livox_test.lvx");
+  this->declare_parameter("diagnostic_freq", diagnostic_freq);
+  this->declare_parameter("diagnostic_timeout", diagnostic_timeout);
 
   this->get_parameter("xfer_format", xfer_format);
   this->get_parameter("multi_topic", multi_topic);
@@ -144,6 +148,8 @@ DriverNode::DriverNode(const rclcpp::NodeOptions & node_options)
   this->get_parameter("publish_freq", publish_freq);
   this->get_parameter("output_data_type", output_type);
   this->get_parameter("frame_id", frame_id);
+  this->get_parameter("diagnostic_freq", diagnostic_freq);
+  this->get_parameter("diagnostic_timeout", diagnostic_timeout);
 
   if (publish_freq > 100.0) {
     publish_freq = 100.0;
@@ -174,6 +180,7 @@ DriverNode::DriverNode(const rclcpp::NodeOptions & node_options)
 
     if ((read_lidar->InitLdsLidar(user_config_path))) {
       DRIVER_INFO(*this, "Init lds lidar success!");
+      lddc_ptr_->SetRosDiagnostic(this, 1.0/diagnostic_freq, diagnostic_timeout);  // this must be after "RegisterLds()"" and "InitLdsLidar()"
     } else {
       DRIVER_ERROR(*this, "Init lds lidar fail!");
     }
@@ -183,6 +190,7 @@ DriverNode::DriverNode(const rclcpp::NodeOptions & node_options)
 
   pointclouddata_poll_thread_ = std::make_shared<std::thread>(&DriverNode::PointCloudDataPollThread, this);
   imudata_poll_thread_ = std::make_shared<std::thread>(&DriverNode::ImuDataPollThread, this);
+  // lidarinfo_poll_thread_ = std::make_shared<std::thread>(&DriverNode::LidarInfoPollThread, this);
 }
 
 }  // namespace livox_ros
@@ -213,8 +221,15 @@ void DriverNode::ImuDataPollThread()
   } while (status == std::future_status::timeout);
 }
 
-
-
+void DriverNode::LidarInfoPollThread()
+{
+  std::future_status status;
+  std::this_thread::sleep_for(std::chrono::seconds(3));
+  do {
+    lddc_ptr_->DistributeLidarInfo();
+    status = future_.wait_for(std::chrono::microseconds(0));
+  } while (status == std::future_status::timeout);
+}
 
 
 

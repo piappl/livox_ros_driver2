@@ -31,6 +31,8 @@
 #include <iomanip>
 #include <math.h>
 #include <stdint.h>
+#include <cstdio>
+#include <sstream>
 
 #include "include/ros_headers.h"
 
@@ -124,7 +126,7 @@ void Lddc::DistributePointCloudData(void) {
     std::cout << "DistributePointCloudData is RequestExit" << std::endl;
     return;
   }
-  
+
   lds_->pcd_semaphore_.Wait();
   for (uint32_t i = 0; i < lds_->lidar_count_; i++) {
     uint32_t lidar_id = i;
@@ -133,7 +135,7 @@ void Lddc::DistributePointCloudData(void) {
     if ((kConnectStateSampling != lidar->connect_state) || (p_queue == nullptr)) {
       continue;
     }
-    PollingLidarPointCloudData(lidar_id, lidar);    
+    PollingLidarPointCloudData(lidar_id, lidar);
   }
 }
 
@@ -146,7 +148,7 @@ void Lddc::DistributeImuData(void) {
     std::cout << "DistributeImuData is RequestExit" << std::endl;
     return;
   }
-  
+
   lds_->imu_semaphore_.Wait();
   for (uint32_t i = 0; i < lds_->lidar_count_; i++) {
     uint32_t lidar_id = i;
@@ -156,6 +158,28 @@ void Lddc::DistributeImuData(void) {
       continue;
     }
     PollingLidarImuData(lidar_id, lidar);
+  }
+}
+
+void Lddc::DistributeLidarInfo(void) {
+  if (!lds_) {
+    std::cout << "lds is not registered" << std::endl;
+    return;
+  }
+  if (lds_->IsRequestExit()) {
+    std::cout << "DistributeLidarInfo is RequestExit" << std::endl;
+    return;
+  }
+
+  lds_->lidar_info_semaphore_.Wait();
+  for (uint32_t i = 0; i < lds_->lidar_count_; i++) {
+    uint32_t lidar_id = i;
+    LidarDevice *lidar = &lds_->lidars_[lidar_id];
+    LidarInfoDataQueue *p_queue = &lidar->lidar_info_data;
+    if ((kConnectStateSampling != lidar->connect_state) || (p_queue == nullptr)) {
+      continue;
+    }
+    PollingLidarInfoData(lidar_id, lidar); // TODO !
   }
 }
 
@@ -182,6 +206,14 @@ void Lddc::PollingLidarImuData(uint8_t index, LidarDevice *lidar) {
   LidarImuDataQueue& p_queue = lidar->imu_data;
   while (!lds_->IsRequestExit() && !p_queue.Empty()) {
     PublishImuData(p_queue, index, lidar->livox_config.frame_id);
+  }
+}
+
+void Lddc::PollingLidarInfoData(uint8_t index, LidarDevice *lidar) {
+  LidarInfoDataQueue& p_queue = lidar->lidar_info_data;
+  while (!lds_->IsRequestExit() && !p_queue.Empty()) {
+    PublishLidarInfoData(p_queue, index, lidar->livox_config.frame_id);
+
   }
 }
 
@@ -442,7 +474,7 @@ void Lddc::InitPclMsg(const StoragePacket& pkg, PointCloud& cloud, uint64_t& tim
   cloud.header.stamp = timestamp / 1000.0;  // to pcl ros time stamp
 #elif defined BUILDING_ROS2
   std::cout << "warning: pcl::PointCloud is not supported in ROS2, "
-            << "please check code logic" 
+            << "please check code logic"
             << std::endl;
 #endif
   return;
@@ -467,7 +499,7 @@ void Lddc::FillPointsToPclMsg(const StoragePacket& pkg, PointCloud& pcl_msg) {
   }
 #elif defined BUILDING_ROS2
   std::cout << "warning: pcl::PointCloud is not supported in ROS2, "
-            << "please check code logic" 
+            << "please check code logic"
             << std::endl;
 #endif
   return;
@@ -485,7 +517,7 @@ void Lddc::PublishPclData(const uint8_t index, const uint64_t timestamp, const P
   }
 #elif defined BUILDING_ROS2
   std::cout << "warning: pcl::PointCloud is not supported in ROS2, "
-            << "please check code logic" 
+            << "please check code logic"
             << std::endl;
 #endif
   return;
@@ -543,6 +575,16 @@ void Lddc::PublishImuData(LidarImuDataQueue& imu_data_queue, const uint8_t index
     }
 #endif
   }
+}
+
+void Lddc::PublishLidarInfoData(LidarInfoDataQueue& lidar_info_data_queue, const uint8_t index, std::string& frame_id) {
+  LidarInfoData lidar_info_data;
+  if (!lidar_info_data_queue.Pop(lidar_info_data)) {
+    //printf("Publish lidar info data failed, lidar info data queue pop failed.\n");
+    return;
+  }
+  lidar_info_data = lidar_info_data;
+  // TODO ! requires writing
 }
 
 #ifdef BUILDING_ROS2
@@ -699,6 +741,60 @@ std::shared_ptr<rclcpp::PublisherBase> Lddc::GetCurrentImuPublisher(uint8_t hand
     return global_imu_pub_;
   }
 }
+
+void Lddc::DiagnProcedure(diagnostic_updater::DiagnosticStatusWrapper & stat, LidarDevice *lidar) {
+  if ((lidar->lidar_type != kLivoxLidarType) || (lidar->handle == 0)) {
+    return;
+  }
+
+  if (kConnectStateOff == lidar->connect_state) {
+    stat.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Not connected.");
+    return;
+  }
+
+  LidarDiagnDataShare *lidar_diagn_share = &lidar->lidar_diagn_data;
+  if ((lidar_diagn_share == nullptr) || lidar_diagn_share->Empty()) {
+    stat.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "No diagnostic data.");
+    return;
+  }
+
+  LidarDiagnData lidar_diagn_data;
+  lidar_diagn_share->Pop(lidar_diagn_data);
+  uint64_t actual_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+  if((lidar_diagn_data.time_stamp + (uint64_t)(diagn_timeout_ * 1000.0)) < actual_time) {
+    stat.summary(diagnostic_msgs::msg::DiagnosticStatus::STALE, "Timeout diagnostic data.");
+    return;
+  }
+
+  switch(lidar_diagn_data.status_code.global.first)
+  {
+    case  LidarDiagStatusLevelNormal:
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "Everything's all right.");
+      break;
+    case LidarDiagStatusLevelWarning:
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "The device is not working properly.");
+      break;
+    case LidarDiagStatusLevelError:
+    case LidarDiagStatusLevelSafetyErr:
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "The device is in an error state.");
+      break;
+    default:
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "The device does not report its correct status.");
+      break;
+  }
+
+  stat.add("system module", lidar_diagn_data.status_code.system_module.second);
+  stat.add("scan module", lidar_diagn_data.status_code.scan_module.second);
+  stat.add("ranging module", lidar_diagn_data.status_code.ranging_module.second);
+  stat.add("communication module", lidar_diagn_data.status_code.communication_module.second);
+  for (const HmsDiagnCodeInfo& hms_diagn_code_info : lidar_diagn_data.hms_diagn) {
+    std::stringstream code_string;
+    code_string << std::hex << std::get<0>(hms_diagn_code_info);
+    stat.add(std::string("0x") + code_string.str(), std::get<0>(std::get<2>(hms_diagn_code_info)));
+  }
+}
+
 #endif
 
 void Lddc::CreateBagFile(const std::string &file_name) {
