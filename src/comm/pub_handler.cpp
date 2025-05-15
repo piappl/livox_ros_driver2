@@ -216,6 +216,7 @@ void PubHandler::QueryInternalInfoCallback(livox_status status, uint32_t handle,
   memset(&direct_lidar_state_info.lidar_diag_status, 0xFF, sizeof(direct_lidar_state_info.lidar_diag_status));
   // HMS (health management system), setting initial value to unknown/undefined
   memset(&direct_lidar_state_info.hms_code, 0xFF, sizeof(direct_lidar_state_info.hms_code));
+  bool hms_code_is_set = false;
 
   uint16_t off = 0;
   for (uint8_t i = 0; i < response->param_num; ++i) {
@@ -230,6 +231,7 @@ void PubHandler::QueryInternalInfoCallback(livox_status status, uint32_t handle,
 */
     }
     if(kv->key == kKeyHmsCode) {
+      hms_code_is_set = true;
       memcpy(direct_lidar_state_info.hms_code, &(kv->value[0]), sizeof(direct_lidar_state_info.hms_code));
 /*
       printf("handle: 0x%x, param_num: [%d], kvKey (kv->key): 0x%x, kKeyHmsCode(), len: %d, code: 0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x\n",
@@ -266,13 +268,20 @@ void PubHandler::QueryInternalInfoCallback(livox_status status, uint32_t handle,
     lidar_diagn_data.time_stamp =
       std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-    for (uint16_t i = 0; i<(sizeof(direct_lidar_state_info.hms_code)/sizeof(uint32_t)); i++) {
-      if (((direct_lidar_state_info.hms_code[i] & 0xFF) != HmsDiagnAbnormalLevelOk) &&
-          ((direct_lidar_state_info.hms_code[i] & 0xFF) != HmsDiagnAbnormalLevelUnkown))
-      {
-        CreateDiagnCodeInfo(direct_lidar_state_info.hms_code[i], hms_diagn_code_info);
-        lidar_diagn_data.hms_diagn.push_back(hms_diagn_code_info);
+    if (hms_code_is_set)
+    {
+      for (uint16_t i = 0; i<(sizeof(direct_lidar_state_info.hms_code)/sizeof(uint32_t)); i++) {
+        if (direct_lidar_state_info.hms_code[i] != 0)
+        {
+          CreateDiagnCodeInfo(direct_lidar_state_info.hms_code[i], hms_diagn_code_info);
+          lidar_diagn_data.hms_diagn.push_back(hms_diagn_code_info);
+        }
       }
+    }
+    else
+    {
+      CreateDiagnCodeInfo(direct_lidar_state_info.hms_code[0], hms_diagn_code_info);
+      lidar_diagn_data.hms_diagn.push_back(hms_diagn_code_info);
     }
 /*
     if (lidar_diagn_data.hms_diagn.empty()) {

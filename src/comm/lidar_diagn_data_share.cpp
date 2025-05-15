@@ -21,6 +21,7 @@
 //
 
 #include "lidar_diagn_data_share.h"
+#include <sstream>
 #include <vector>
 #include<algorithm>
 
@@ -37,9 +38,9 @@ static std::string TranslateDiagnStatusCode2String(uint8_t code) {
     case LidarDiagStatusLevelSafetyErr:
       return std::string("SafertyErr.");
     case LidarDiagStatusLevelUnknow:
-      return std::string("Unknow level.");
+      return std::string("No data received.");
     default:
-      return std::string("Undefined code.");
+      return std::string("Unknow status code '") + std::to_string(static_cast<unsigned int>(code)) + "' (dec).";
   }
 }
 
@@ -63,11 +64,18 @@ void CreateDiagnStatusCodeGlobal(const std::vector<HmsDiagnCodeInfo>& hms_diagn,
     status_code.communication_module.first
   };
   for(const HmsDiagnCodeInfo& hms_diagn_code_info: hms_diagn) {
+    uint8_t hms_abnormal_level = std::get<1>(hms_diagn_code_info);
     // Normalization of 'HmsDiagnAbnormalLevel' values ​​to 'LidarDiagStatusLevel' values
     // There is a shift of 1 value between the states, ex.
     //         HmsDiagnAbnormalLevelInfo = 0x01, and LidarDiagStatusLevelNormal = 0,
     // '1' should be subtract from HmsDiagnCodeInfo.HmsDiagnAbnormalLevel
-    status_codes_all.push_back(std::get<1>(hms_diagn_code_info) - 1);
+    if (hms_abnormal_level != HmsDiagnAbnormalLevelUnkown) {
+      hms_abnormal_level -= 1;
+    }
+    else {
+      continue;
+    }
+    status_codes_all.push_back(hms_abnormal_level);
   }
   uint8_t global = *std::max_element(status_codes_all.begin(), status_codes_all.end());
   status_code.global = StatusCodeInfo(global, TranslateDiagnStatusCode2String(global));
@@ -88,7 +96,7 @@ void CreateDiagnCodeInfo(uint32_t hms_code_full, HmsDiagnCodeInfo& hms_diagn_cod
   switch (hms_abnormal_level) {
     case HmsDiagnAbnormalLevelOk:
       hms_diagn_code_info = { hms_abnormal_id, HmsDiagnAbnormalLevelOk,
-        { std::string("OK? (not occur!) - ") + hms_abnormal_description, hms_suggested_solution } };
+        { std::string("0x00 (invalid level!) - ") + hms_abnormal_description, hms_suggested_solution } };
       break;
     case HmsDiagnAbnormalLevelInfo:
       hms_diagn_code_info = { hms_abnormal_id, HmsDiagnAbnormalLevelInfo,
@@ -111,8 +119,10 @@ void CreateDiagnCodeInfo(uint32_t hms_code_full, HmsDiagnCodeInfo& hms_diagn_cod
         { hms_abnormal_description, hms_suggested_solution } };
         break;
     default:
+      std::stringstream level_string;
+      level_string << std::hex << hms_abnormal_level;
       hms_diagn_code_info = { hms_abnormal_id, HmsDiagnAbnormalLevelUnkown,
-        { std::string("UNKOWN ERR LEVEL - ") + hms_abnormal_description, hms_suggested_solution } };
+        { std::string("0x") + level_string.str() + " (invalid level!) - " + hms_abnormal_description, hms_suggested_solution } };
       break;
   }
 }
